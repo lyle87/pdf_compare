@@ -129,8 +129,13 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 continue
 
             lower_line = line.lower()
-            if "plan name" in lower_line or "deviation" in lower_line and "actual" in lower_line:
-                # Skip header rows
+            if (
+                "plan name" in lower_line
+                or "part serial" in lower_line
+                or lower_line.startswith("date ")
+                or "deviation" in lower_line and "actual" in lower_line
+            ):
+                # Skip header rows and report metadata
                 continue
 
             tokens = line.split()
@@ -138,7 +143,8 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             while tokens and _is_numeric_token(tokens[-1]):
                 numeric_tail.append(tokens.pop())
 
-            if not numeric_tail or not tokens:
+            # Require multiple numeric columns (actual, nominal, tolerance, deviation)
+            if len(numeric_tail) < 3 or not tokens:
                 continue
 
             feature_name = " ".join(tokens).strip()
