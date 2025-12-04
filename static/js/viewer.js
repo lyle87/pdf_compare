@@ -133,22 +133,28 @@ async function requestTextDiff() {
 
       if (isRight) {
         const c = Math.max(0, Math.min(5, boxObj.dashCount || 0));
-        if (c === 0) {
-          div.style.borderColor = '#1976d2';
+        if (boxObj.improved) {
+          div.style.borderColor = 'rgba(67, 160, 71, 0.75)';
           div.style.borderWidth = '2px';
+          div.style.backgroundColor = 'rgba(67, 160, 71, 0.12)';
+        } else if (c === 0) {
+          div.style.borderColor = 'rgba(25, 118, 210, 0.75)';
+          div.style.borderWidth = '2px';
+          div.style.backgroundColor = 'rgba(25, 118, 210, 0.08)';
         } else {
           const t = Math.min(1, c / 5);
           const lerp = (a,b,t)=> Math.round(a + (b-a)*t);
           const yellow = [255, 213, 79];
           const red = [211, 47, 47];
           const rgb = [ lerp(yellow[0], red[0], t), lerp(yellow[1], red[1], t), lerp(yellow[2], red[2], t) ];
-          div.style.borderColor = `rgb(${rgb.join(',')})`;
+          div.style.borderColor = `rgba(${rgb.join(',')}, 0.75)`;
           div.style.borderWidth = Math.max(2, Math.round(1 + 3*t)) + 'px';
-          div.style.backgroundColor = `rgba(${rgb.join(',')}, ${0.12 + 0.5*t})`;
+          div.style.backgroundColor = `rgba(${rgb.join(',')}, ${0.08 + 0.25*t})`;
         }
       } else {
-        div.style.borderColor = '#1e88e5';
+        div.style.borderColor = 'rgba(30, 136, 229, 0.75)';
         div.style.borderWidth = '2px';
+        div.style.backgroundColor = 'rgba(30, 136, 229, 0.08)';
       }
 
       div.title = boxObj.text || '';
