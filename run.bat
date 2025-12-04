@@ -32,6 +32,18 @@ echo [OK] Python found
 echo.
 
 REM Create virtual environment if it doesn't exist
+set REBUILD_VENV=
+if exist ".venv" (
+    if not exist ".venv\Scripts\python.exe" if not exist ".venv\bin\python" (
+        set REBUILD_VENV=1
+    )
+)
+
+if defined REBUILD_VENV (
+    echo Existing virtual environment is missing a python executable. Rebuilding...
+    rmdir /s /q .venv
+)
+
 if not exist ".venv" (
     echo Creating virtual environment...
     %PYTHON_CMD% -m venv .venv
