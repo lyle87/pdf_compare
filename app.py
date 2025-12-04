@@ -178,8 +178,11 @@ def _run_app():
     host = os.environ.get("PDF_COMPARE_HOST", default_host)
     port = int(os.environ.get("PDF_COMPARE_PORT", "5000"))
 
+    def _start(host_value: str, port_value: int):
+        app.run(host=host_value, port=port_value, debug=True, use_reloader=False)
+
     try:
-        app.run(host=host, port=port, debug=True)
+        _start(host, port)
     except OSError as exc:
         # Common on some Windows environments where binding to the requested host/port is forbidden
         if getattr(exc, "errno", None) not in {13, 10013}:
@@ -191,7 +194,7 @@ def _run_app():
             f"\nPort {port} on {host} is blocked or requires elevated permissions. "
             f"Retrying on http://{retry_host}:{retry_port} ...\n"
         )
-        app.run(host=retry_host, port=retry_port, debug=True)
+        _start(retry_host, retry_port)
 
 
 if __name__ == '__main__':
