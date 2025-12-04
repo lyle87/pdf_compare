@@ -133,7 +133,11 @@ async function requestTextDiff() {
 
       if (isRight) {
         const c = Math.max(0, Math.min(5, boxObj.dashCount || 0));
-        if (c === 0) {
+        if (boxObj.improved) {
+          div.style.borderColor = '#43a047';
+          div.style.borderWidth = '2px';
+          div.style.backgroundColor = 'rgba(67, 160, 71, 0.15)';
+        } else if (c === 0) {
           div.style.borderColor = '#1976d2';
           div.style.borderWidth = '2px';
         } else {

@@ -117,6 +117,26 @@ def textdiff():
     if not os.path.exists(left_path) or not os.path.exists(right_path):
         return {'error': 'file not found'}, 404
 
+    def deviation_score(text: str) -> int:
+        """Return a simple deviation metric for strings like "--|".
+
+        A lower score indicates a value closer to nominal. Ignore numbers so
+        regular values aren't treated as deviation markers.
+        """
+
+        if any(c.isdigit() for c in text):
+            return -1
+        if '-' not in text and '|' not in text:
+            return -1
+        return text.count('-')
+
+    def dash_metric(text: str) -> int:
+        """Return the dash count used for coloring overlays."""
+
+        if any(c.isdigit() for c in text):
+            return 0
+        return text.count('-') + text.count('|')
+
     def extract_words(path, page_num):
         doc = fitz.open(path)
         if page_num < 1 or page_num > doc.page_count:
@@ -166,7 +186,7 @@ def textdiff():
             left_boxes.append({
                 'box': [lw['x0'], lw['y0'], lw['x1'], lw['y1']],
                 'text': lw['text'],
-                'dashCount': lw['text'].count('-') + lw['text'].count('|')
+                'dashCount': dash_metric(lw['text'])
             })
 
     right_boxes = []
@@ -179,13 +199,26 @@ def textdiff():
                 break
         if not found:
             # only count dashes/pipes if text contains no numbers
-            dashCount = 0
-            if not any(c.isdigit() for c in rw['text']):
-                dashCount = rw['text'].count('-') + rw['text'].count('|')
+            dashCount = dash_metric(rw['text'])
+            deviation = deviation_score(rw['text'])
+            improved = False
+            if deviation >= 0 and '|' in rw['text']:
+                for lw in left_words:
+                    left_deviation = deviation_score(lw['text'])
+                    if left_deviation < 0:
+                        continue
+                    if rw['text'].count('|') != lw['text'].count('|'):
+                        continue
+                    if not intersects(rw, lw):
+                        continue
+                    if deviation < left_deviation:
+                        improved = True
+                        break
             right_boxes.append({
                 'box': [rw['x0'], rw['y0'], rw['x1'], rw['y1']],
                 'text': rw['text'],
-                'dashCount': dashCount
+                'dashCount': dashCount,
+                'improved': improved
             })
 
     return json.dumps({'left': left_boxes, 'right': right_boxes})
