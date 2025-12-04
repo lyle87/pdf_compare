@@ -27,8 +27,12 @@ fi
 PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
 echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found"
 
-# Create virtual environment if it doesn't exist
-if [ ! -d ".venv" ]; then
+# Create virtual environment if it doesn't exist or is missing python
+if [ ! -x ".venv/bin/python" ]; then
+    if [ -d ".venv" ]; then
+        echo "Existing virtual environment is broken or incomplete. Rebuilding..."
+        rm -rf .venv
+    fi
     echo "Creating virtual environment..."
     python3 -m venv .venv
     echo -e "${GREEN}✓${NC} Virtual environment created"
