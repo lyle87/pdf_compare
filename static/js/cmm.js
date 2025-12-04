@@ -65,7 +65,7 @@
     if (!features.length) {
       setStatus('No feature rows were found with the current filters.', false);
       resultsSection.hidden = true;
-      return;
+      return false;
     }
 
     features.forEach(feature => {
@@ -102,6 +102,7 @@
     }
     summaryEl.textContent = summary;
     resultsSection.hidden = false;
+    return true;
   }
 
   form.addEventListener('submit', async (event) => {
@@ -135,11 +136,11 @@
       }
 
       const data = JSON.parse(text || '{}');
-      renderTable(data);
+      const hasFeatures = renderTable(data);
 
       if (data.errors && data.errors.length) {
         setStatus(`Completed with ${data.errors.length} skipped file(s).`, false);
-      } else {
+      } else if (hasFeatures) {
         setStatus('Complete.', false);
       }
     } catch (err) {

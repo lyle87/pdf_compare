@@ -143,8 +143,9 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             while tokens and _is_numeric_token(tokens[-1]):
                 numeric_tail.append(tokens.pop())
 
-            # Require multiple numeric columns (actual, nominal, tolerance, deviation)
-            if len(numeric_tail) < 3 or not tokens:
+            # Require at least a deviation plus one other numeric column to avoid
+            # picking up serial numbers / page numbers at the end of lines.
+            if len(numeric_tail) < 2 or not tokens:
                 continue
 
             feature_name = " ".join(tokens).strip()
