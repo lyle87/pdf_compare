@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory
 from werkzeug.utils import secure_filename
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 import os
 import sys
 import json
@@ -94,11 +95,184 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
+@app.route('/cmm', methods=['GET'])
+def cmm():
+    return render_template('cmm.html', part_types=["675", "50TT", "50TL"])
+
+
 def normalize_text(s: str) -> str:
     # simple normalization: lowercase, keep letters+numbers and spaces
     import re
     # allow hyphen and vertical bar as well (keep them as characters to compare)
     return re.sub(r'[^0-9a-z\-\| ]+', '', s.lower())
+
+
+def _is_numeric_token(token: str) -> bool:
+    import re
+    return re.match(r'^[+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?$', token) is not None
+
+
+def _parse_numeric_token(token: str) -> Optional[float]:
+    """Return float value for token that may contain commas; otherwise None."""
+
+    try:
+        cleaned = token.replace(",", "")
+        return float(cleaned)
+    except Exception:
+        return None
+
+
+def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
+    """Return (feature, deviation) rows parsed from a ZEISS CMM PDF."""
+
+    if fitz is None:
+        raise RuntimeError("PyMuPDF is required to parse CMM reports")
+
+    rows: List[Tuple[str, float]] = []
+    doc = fitz.open(path)
+
+    for page in doc:
+        text = page.get_text("text")
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            lower_line = line.lower()
+            if (
+                "plan name" in lower_line
+                or "part serial" in lower_line
+                or lower_line.startswith("date ")
+                or "deviation" in lower_line and "actual" in lower_line
+            ):
+                # Skip header rows and report metadata
+                continue
+
+            tokens = line.split()
+
+            # Drop trailing histogram/graph markers ("|", "-", "—") so we can
+            # focus on numeric columns at the end of the row.
+            while tokens and all(ch in "|-—" for ch in tokens[-1]):
+                tokens.pop()
+
+            numeric_tail: List[str] = []
+            while tokens and _is_numeric_token(tokens[-1]):
+                numeric_tail.append(tokens.pop())
+
+            # Require at least a deviation plus one other numeric column to avoid
+            # picking up serial numbers / page numbers at the end of lines.
+            if len(numeric_tail) < 2 or not tokens:
+                continue
+
+            feature_name = " ".join(tokens).strip()
+            if not feature_name:
+                continue
+
+            deviation_token = numeric_tail[0]
+            deviation_value = _parse_numeric_token(deviation_token)
+            if deviation_value is None:
+                continue
+
+            rows.append((feature_name, deviation_value))
+
+    return rows
+
+
+def _collect_cmm_data(
+    folder: str,
+    start_date: Optional[datetime],
+    end_date: Optional[datetime],
+    part_type: Optional[str],
+    errors: Optional[List[str]] = None,
+) -> Dict[str, List[Dict[str, object]]]:
+    """Scan PDFs in *folder* and return feature deviations keyed by feature name."""
+
+    results: Dict[str, List[Dict[str, object]]] = {}
+    part_type_upper = part_type.upper() if part_type else None
+
+    for entry in sorted(os.listdir(folder)):
+        if not entry.lower().endswith('.pdf'):
+            continue
+
+        full_path = os.path.join(folder, entry)
+        if not os.path.isfile(full_path):
+            continue
+
+        if part_type_upper and part_type_upper not in entry.upper():
+            continue
+
+        mtime = datetime.fromtimestamp(os.path.getmtime(full_path))
+        if start_date and mtime < start_date:
+            continue
+        if end_date and mtime > end_date:
+            continue
+
+        try:
+            rows = _extract_cmm_rows(full_path)
+        except Exception as exc:
+            if errors is not None:
+                errors.append(f"{entry}: {exc}")
+            continue
+
+        for feature, deviation in rows:
+            results.setdefault(feature, []).append({
+                'date': mtime.isoformat(),
+                'deviation': deviation,
+                'report': entry,
+            })
+
+    for feature in results:
+        results[feature].sort(key=lambda r: r['date'])
+
+    return results
+
+
+def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+@app.route('/api/cmm_summary', methods=['POST'])
+def cmm_summary():
+    payload = request.get_json(silent=True) or {}
+    folder = payload.get('folder')
+    part_type = payload.get('partType')
+    start_date = _parse_date(payload.get('startDate'))
+    end_date = _parse_date(payload.get('endDate'))
+
+    if not folder:
+        return {'error': 'Missing folder path'}, 400
+    if not os.path.isdir(folder):
+        return {'error': f'Folder does not exist: {folder}'}, 400
+    if fitz is None:
+        return {'error': 'PyMuPDF is required to parse CMM reports'}, 500
+
+    errors: List[str] = []
+    data = _collect_cmm_data(folder, start_date, end_date, part_type, errors)
+
+    features = []
+    report_names = set()
+    for name in sorted(data.keys()):
+        points = data[name]
+        for p in points:
+            report_names.add(p['report'])
+        latest = points[-1]['deviation'] if points else None
+        features.append({
+            'name': name,
+            'latest': latest,
+            'points': points,
+        })
+
+    response = {
+        'features': features,
+        'reportsAnalyzed': len(report_names),
+        'errors': errors,
+    }
+    return json.dumps(response)
 
 
 @app.route('/textdiff')
