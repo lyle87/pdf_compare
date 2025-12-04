@@ -7,6 +7,7 @@ let scale = 1.0;
 let sync = true;
 let textDiffActive = false;
 let showLeftDiffs = true;
+let diffOpacity = 1.0;
 
 const leftCanvas = document.getElementById('leftCanvas');
 const rightCanvas = document.getElementById('rightCanvas');
@@ -107,6 +108,14 @@ async function requestTextDiff() {
     clearBoxes('rightSide');
 
     // Helper: create a box element in the `.side` container using normalized coords
+    const applyAlpha = (rgbArray, baseAlpha) => {
+      const sliderAlpha = Math.max(0, Math.min(1, diffOpacity));
+      const effective = sliderAlpha === 0
+        ? 0
+        : Math.min(1, baseAlpha + (1 - baseAlpha) * sliderAlpha);
+      return `rgba(${rgbArray.join(',')}, ${effective})`;
+    };
+
     const makeBox = (sideId, boxObj, isRight=false) => {
       const side = document.getElementById(sideId);
       const canvas = side.querySelector('canvas');
@@ -134,19 +143,20 @@ async function requestTextDiff() {
       if (isRight) {
         const c = Math.max(0, Math.min(5, boxObj.dashCount || 0));
         if (boxObj.improved) {
-          div.style.backgroundColor = 'rgba(67, 160, 71, 0.12)';
+          div.style.backgroundColor = applyAlpha([67, 160, 71], 0.12);
         } else if (c === 0) {
-          div.style.backgroundColor = 'rgba(25, 118, 210, 0.08)';
+          div.style.backgroundColor = applyAlpha([25, 118, 210], 0.08);
         } else {
           const t = Math.min(1, c / 5);
           const lerp = (a,b,t)=> Math.round(a + (b-a)*t);
           const yellow = [255, 213, 79];
           const red = [211, 47, 47];
           const rgb = [ lerp(yellow[0], red[0], t), lerp(yellow[1], red[1], t), lerp(yellow[2], red[2], t) ];
-          div.style.backgroundColor = `rgba(${rgb.join(',')}, ${0.08 + 0.25*t})`;
+          const baseAlpha = 0.08 + 0.25 * t;
+          div.style.backgroundColor = applyAlpha(rgb, baseAlpha);
         }
       } else {
-        div.style.backgroundColor = 'rgba(30, 136, 229, 0.08)';
+        div.style.backgroundColor = applyAlpha([30, 136, 229], 0.08);
       }
 
       div.title = boxObj.text || '';
@@ -184,6 +194,19 @@ textDiffBtn.addEventListener('click', async (e) => {
 const showLeftCheckbox = document.getElementById('showLeft');
 showLeftCheckbox.addEventListener('change', async (e) => {
   showLeftDiffs = e.target.checked;
+  if (textDiffActive) await requestTextDiff();
+});
+
+// opacity slider for diff boxes
+const boxOpacityInput = document.getElementById('boxOpacity');
+const boxOpacityVal = document.getElementById('boxOpacityVal');
+const updateOpacityLabel = () => {
+  boxOpacityVal.textContent = Math.round(diffOpacity * 100) + '%';
+};
+updateOpacityLabel();
+boxOpacityInput.addEventListener('input', async (e) => {
+  diffOpacity = parseFloat(e.target.value);
+  updateOpacityLabel();
   if (textDiffActive) await requestTextDiff();
 });
 
