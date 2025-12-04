@@ -109,8 +109,11 @@ async function requestTextDiff() {
 
     // Helper: create a box element in the `.side` container using normalized coords
     const applyAlpha = (rgbArray, baseAlpha) => {
-      const clamped = Math.max(0, Math.min(1, baseAlpha * diffOpacity));
-      return `rgba(${rgbArray.join(',')}, ${clamped})`;
+      const sliderAlpha = Math.max(0, Math.min(1, diffOpacity));
+      const effective = sliderAlpha === 0
+        ? 0
+        : Math.min(1, baseAlpha + (1 - baseAlpha) * sliderAlpha);
+      return `rgba(${rgbArray.join(',')}, ${effective})`;
     };
 
     const makeBox = (sideId, boxObj, isRight=false) => {
