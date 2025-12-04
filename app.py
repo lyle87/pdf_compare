@@ -109,7 +109,17 @@ def normalize_text(s: str) -> str:
 
 def _is_numeric_token(token: str) -> bool:
     import re
-    return re.match(r'^[+-]?\d+(?:\.\d+)?$', token) is not None
+    return re.match(r'^[+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?$', token) is not None
+
+
+def _parse_numeric_token(token: str) -> Optional[float]:
+    """Return float value for token that may contain commas; otherwise None."""
+
+    try:
+        cleaned = token.replace(",", "")
+        return float(cleaned)
+    except Exception:
+        return None
 
 
 def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
@@ -139,6 +149,12 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 continue
 
             tokens = line.split()
+
+            # Drop trailing histogram/graph markers ("|", "-", "—") so we can
+            # focus on numeric columns at the end of the row.
+            while tokens and all(ch in "|-—" for ch in tokens[-1]):
+                tokens.pop()
+
             numeric_tail: List[str] = []
             while tokens and _is_numeric_token(tokens[-1]):
                 numeric_tail.append(tokens.pop())
@@ -153,9 +169,8 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 continue
 
             deviation_token = numeric_tail[0]
-            try:
-                deviation_value = float(deviation_token)
-            except ValueError:
+            deviation_value = _parse_numeric_token(deviation_token)
+            if deviation_value is None:
                 continue
 
             rows.append((feature_name, deviation_value))
