@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDF Compare - Upload</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 2rem; }
+      .box { max-width: 640px; margin: auto; }
+      input[type=file] { display:block; margin-bottom: 1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>PDF Compare</h1>
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <label>Left PDF</label>
+        <input type="file" name="left" accept="application/pdf" required />
+        <label>Right PDF</label>
+        <input type="file" name="right" accept="application/pdf" required />
+        <button type="submit">Upload & Compare</button>
+      </form>
+      <p style="margin-top:1rem">Or navigate directly to `/viewer?l=left.pdf&r=right.pdf` if files already in `uploads/`.</p>
+    </div>
+  </body>
+</html>
