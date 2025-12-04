@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory
 from werkzeug.utils import secure_filename
+from typing import Optional
 import os
+import sys
 import json
 try:
     import fitz  # PyMuPDF
@@ -9,10 +11,36 @@ except Exception:
     fitz = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+
+
+def _resource_root() -> str:
+    """Return the folder that contains bundled templates/static assets."""
+
+    if getattr(sys, "frozen", False):
+        # PyInstaller onefile/unpacked builds expose bundled assets in _MEIPASS
+        return getattr(sys, "_MEIPASS", BASE_DIR)
+    return BASE_DIR
+
+
+def _runtime_root() -> str:
+    """Return the folder where runtime artifacts (uploads) should live."""
+
+    if getattr(sys, "frozen", False):
+        # When frozen, keep uploads beside the .exe so the app stays portable
+        return os.path.dirname(sys.executable)
+    return BASE_DIR
+
+
+RESOURCE_ROOT = _resource_root()
+RUNTIME_ROOT = _runtime_root()
+UPLOAD_FOLDER = os.path.join(RUNTIME_ROOT, "uploads")
 ALLOWED_EXTENSIONS = {'pdf'}
 
-app = Flask(__name__, static_folder='static', template_folder='templates')
+app = Flask(
+    __name__,
+    static_folder=os.path.join(RESOURCE_ROOT, "static"),
+    template_folder=os.path.join(RESOURCE_ROOT, "templates"),
+)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 if not os.path.exists(UPLOAD_FOLDER):
@@ -172,29 +200,56 @@ def _find_free_port(host: str) -> int:
         return s.getsockname()[1]
 
 
-def _run_app():
-    # Default to a localhost-only host on Windows to avoid corporate socket restrictions
-    default_host = "127.0.0.1" if os.name == "nt" else "0.0.0.0"
-    host = os.environ.get("PDF_COMPARE_HOST", default_host)
-    port = int(os.environ.get("PDF_COMPARE_PORT", "5000"))
+def _pick_listen_address(host_hint: Optional[str], port_hint: Optional[str]):
+    """Choose a listen host/port that we can bind to."""
 
-    def _start(host_value: str, port_value: int):
-        app.run(host=host_value, port=port_value, debug=True, use_reloader=False)
+    import socket
+
+    default_host = "127.0.0.1" if os.name == "nt" else "0.0.0.0"
+    host = host_hint or default_host
+    port = int(port_hint or "5000")
 
     try:
-        _start(host, port)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind((host, port))
     except OSError as exc:
-        # Common on some Windows environments where binding to the requested host/port is forbidden
-        if getattr(exc, "errno", None) not in {13, 10013}:
+        errno = getattr(exc, "errno", None)
+        # Permission denied / address in use / access errors
+        if errno not in {13, 48, 98, 10013}:
             raise
 
-        retry_host = "127.0.0.1"
-        retry_port = _find_free_port(retry_host)
-        print(
-            f"\nPort {port} on {host} is blocked or requires elevated permissions. "
-            f"Retrying on http://{retry_host}:{retry_port} ...\n"
+        fallback_host = "127.0.0.1"
+        fallback_port = _find_free_port(fallback_host)
+        note = (
+            f"Port {port} on {host} is unavailable or requires elevated permissions. "
+            f"Switching to http://{fallback_host}:{fallback_port} instead."
         )
-        _start(retry_host, retry_port)
+        return fallback_host, fallback_port, note
+
+    return host, port, None
+
+
+def _auto_launch_browser(host: str, port: int):
+    import threading
+    import webbrowser
+
+    def _open():
+        webbrowser.open(f"http://{host}:{port}", new=2, autoraise=True)
+
+    threading.Timer(1.0, _open).start()
+
+
+def _run_app():
+    # Default to a localhost-only host on Windows to avoid corporate socket restrictions
+    host_hint = os.environ.get("PDF_COMPARE_HOST")
+    port_hint = os.environ.get("PDF_COMPARE_PORT")
+
+    host, port, note = _pick_listen_address(host_hint, port_hint)
+    if note:
+        print("\n" + note + "\n")
+
+    _auto_launch_browser(host, port)
+    app.run(host=host, port=port, debug=True, use_reloader=False)
 
 
 if __name__ == '__main__':
