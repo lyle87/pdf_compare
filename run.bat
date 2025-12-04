@@ -43,21 +43,29 @@ if not exist ".venv" (
     echo [OK] Virtual environment created
 )
 
-REM Activate virtual environment
-echo Activating virtual environment...
-call .venv\Scripts\activate.bat
-if errorlevel 1 (
-    echo Error activating virtual environment
-    pause
-    exit /b 1
+REM Prefer using the venv's python directly (don't rely on activate)
+echo Locating virtualenv python executable...
+set VENV_PY=.venv\Scripts\python.exe
+if not exist "%VENV_PY%" (
+    REM Fallback: older venvs or alternate layout
+    set VENV_PY=.venv\bin\python
 )
 
-REM Install/upgrade dependencies
-echo Installing dependencies...
-python -m pip install --upgrade pip >nul 2>&1
-python -m pip install -q -r requirements.txt
+if not exist "%VENV_PY%" (
+    echo Could not find venv python at "%VENV_PY%".
+    echo Trying to continue using %PYTHON_CMD% (system python).
+    set VENV_PY=%PYTHON_CMD%
+)
+
+REM Install/upgrade dependencies using the venv python
+echo Installing dependencies using %VENV_PY%...
+"%VENV_PY%" -m pip install --upgrade pip >nul 2>&1 || (
+    echo Warning: pip upgrade may have failed, continuing...
+)
+"%VENV_PY%" -m pip install -q -r requirements.txt
 if errorlevel 1 (
-    echo Error installing dependencies
+    echo Error installing dependencies with %VENV_PY%
+    echo You can try: %PYTHON_CMD% -m pip install -r requirements.txt
     pause
     exit /b 1
 )
@@ -69,7 +77,7 @@ echo Open your browser to: http://localhost:5000
 echo Press Ctrl+C to stop the server
 echo.
 
-REM Run the Flask app
-python app.py
+REM Run the Flask app using the venv python
+"%VENV_PY%" app.py
 
 pause
