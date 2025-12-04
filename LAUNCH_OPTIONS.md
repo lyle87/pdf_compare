@@ -5,15 +5,26 @@ This project includes several ways to run the application on any machine. Choose
 ### Quick Launch Options
 
 #### 1. **Windows Users** 🪟
-   **Just double-click:** `run.bat`
+
+**Option A: Batch file (recommended)**
+   Just double-click: `run.bat`
    
-   No setup needed! The script will:
+**Option B: VBScript (if batch doesn't work)**
+   Double-click: `run.vbs`
+   
+**Option C: Python (most reliable)**
+   Run in Command Prompt:
+   ```cmd
+   python run.py
+   ```
+   
+The script will:
    - Check if Python is installed
    - Create a virtual environment
    - Install dependencies
    - Start the server
    
-   Then open your browser to `http://localhost:5000`
+Then open your browser to `http://localhost:5000`
 
 #### 2. **Linux / macOS Users** 🐧 / 🍎
    **Run in terminal:**
@@ -51,7 +62,7 @@ This project includes several ways to run the application on any machine. Choose
 ### Manual Setup (If scripts don't work)
 
 1. Ensure Python 3.8+ is installed: https://www.python.org/downloads/
-2. Run in terminal:
+2. Run in terminal/command prompt:
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate  # or .venv\Scripts\activate on Windows
@@ -63,23 +74,34 @@ This project includes several ways to run the application on any machine. Choose
 
 | Script | OS | Advantages |
 |--------|----|----|
-| `run.sh` | Linux/macOS | Bash native, colored output, direct control |
 | `run.bat` | Windows | Double-click support, automatic Python detection |
+| `run.vbs` | Windows | Alternative if .bat fails, VBScript native |
 | `run.py` | Any | Pure Python, no shell scripting needed, portable |
+| `run.sh` | Linux/macOS | Bash native, colored output, direct control |
 | `create_app_bundle.sh` | macOS | Native macOS app bundle |
 
 ### Troubleshooting
 
-**"Python not found"**
-- Install from https://www.python.org/downloads/
-- Windows: Check "Add Python to PATH" during installation
-- macOS: Use `brew install python3` or download from python.org
+**Windows: "The system cannot find the path specified"**
+- This is usually a Python PATH issue
+- Try `run.vbs` instead of `run.bat`
+- Or use: `python run.py` in Command Prompt
+- If still failing: Uninstall Python and reinstall, making sure to check "Add Python to PATH"
+
+**Windows: "Python is not installed"**
+- Install from https://www.python.org/downloads/ (3.8 or newer)
+- Make sure to check ✓ "Add Python to PATH" during installation
+- Restart Command Prompt after installing Python
+
+**macOS/Linux: "Permission denied"**
+- Run: `chmod +x run.sh` first, then `./run.sh`
 
 **Port 5000 in use**
 - Edit `app.py` and change: `app.run(host='127.0.0.1', port=5001, debug=True)`
 
-**Permission denied (Linux/macOS)**
-- Run: `chmod +x run.sh` first, then `./run.sh`
+**"Module not found" errors**
+- Delete `.venv` folder: `rm -rf .venv` (Linux/macOS) or `rmdir /s .venv` (Windows)
+- Re-run the launcher script to rebuild dependencies
 
 ### First Run
 
