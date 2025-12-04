@@ -45,16 +45,16 @@ if not exist ".venv" (
 
 REM Prefer using the venv's python directly (don't rely on activate)
 echo Locating virtualenv python executable...
-set VENV_PY=.venv\Scripts\python.exe
-if not exist "%VENV_PY%" (
-    REM Fallback: older venvs or alternate layout
-    set VENV_PY=.venv\bin\python
-)
 
-if not exist "%VENV_PY%" (
-    echo Could not find venv python at "%VENV_PY%".
-    echo Trying to continue using %PYTHON_CMD% (system python).
-    set VENV_PY=%PYTHON_CMD%
+REM Check the common venv locations explicitly to avoid expanding empty variables
+if exist ".venv\Scripts\python.exe" (
+    set "VENV_PY=.venv\Scripts\python.exe"
+) else if exist ".venv\bin\python" (
+    set "VENV_PY=.venv\bin\python"
+) else (
+    echo Could not find a python executable inside .venv
+    echo Will attempt to use the system python: %PYTHON_CMD%
+    set "VENV_PY=%PYTHON_CMD%"
 )
 
 REM Install/upgrade dependencies using the venv python
