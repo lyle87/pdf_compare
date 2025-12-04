@@ -5,59 +5,80 @@ Cross-platform executable to start the PDF Compare application.
 Usage: python run.py  (or ./run.py on Linux/macOS after chmod +x)
 """
 
-import subprocess
-import sys
 import os
 import platform
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+def ensure_venv(venv_path: Path) -> Path:
+    """Ensure a usable virtual environment exists and return its python path."""
+    def venv_python_path(base: Path) -> Path:
+        return base / ("Scripts" if platform.system() == "Windows" else "bin") / (
+            "python.exe" if platform.system() == "Windows" else "python"
+        )
+
+    venv_python = venv_python_path(venv_path)
+    needs_rebuild = (not venv_path.exists()) or (not venv_python.exists())
+
+    if needs_rebuild:
+        if venv_path.exists():
+            print("Existing virtual environment is missing a Python executable. Rebuilding it...")
+            shutil.rmtree(venv_path)
+
+        print("Creating virtual environment...")
+        subprocess.run([sys.executable, "-m", "venv", str(venv_path)], check=True)
+        print("✓ Virtual environment created")
+        venv_python = venv_python_path(venv_path)
+
+    return venv_python
+
 
 def main():
     script_dir = Path(__file__).parent.absolute()
     os.chdir(script_dir)
-    
+
     print("\n" + "="*50)
     print("PDF Compare Tool")
     print("="*50 + "\n")
-    
+
     # Check Python version
     if sys.version_info < (3, 8):
         print("❌ Error: Python 3.8+ is required")
         print(f"   You have Python {sys.version_info.major}.{sys.version_info.minor}")
         sys.exit(1)
-    
+
     print(f"✓ Python {sys.version_info.major}.{sys.version_info.minor} found")
-    
-    # Create/check virtual environment
+
     venv_path = script_dir / ".venv"
-    if not venv_path.exists():
-        print("Creating virtual environment...")
-        subprocess.run([sys.executable, "-m", "venv", str(venv_path)], check=True)
-        print("✓ Virtual environment created")
-    
-    # Determine the Python executable in venv
-    if platform.system() == "Windows":
-        venv_python = venv_path / "Scripts" / "python.exe"
-    else:
-        venv_python = venv_path / "bin" / "python"
-    
+    venv_python = ensure_venv(venv_path)
+
     # Install dependencies
     print("Installing dependencies...")
     subprocess.run([
-        str(venv_python), "-m", "pip", 
+        str(venv_python), "-m", "pip",
         "install", "--upgrade", "pip"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
+
     subprocess.run([
         str(venv_python), "-m", "pip", "install", "-q", "-r", "requirements.txt"
     ], check=True)
     print("✓ Dependencies installed\n")
-    
+
     # Run the app
+    host = os.environ.get("PDF_COMPARE_HOST") or (
+        "127.0.0.1" if os.name == "nt" else "0.0.0.0"
+    )
+    port = os.environ.get("PDF_COMPARE_PORT", "5000")
+
     print("Starting PDF Compare Tool...")
-    print(f"Open your browser to: http://localhost:5000")
+    print(f"Open your browser to: http://{host}:{port}")
     print("Press Ctrl+C to stop the server\n")
-    
-    subprocess.run([str(venv_python), "app.py"])
+
+    env = os.environ.copy()
+    env.update({"PDF_COMPARE_HOST": host, "PDF_COMPARE_PORT": str(port)})
+    subprocess.run([str(venv_python), "app.py"], env=env)
 
 if __name__ == "__main__":
     try:

@@ -32,6 +32,24 @@ echo [OK] Python found
 echo.
 
 REM Create virtual environment if it doesn't exist
+set REBUILD_VENV=
+set "WINDOWS_VENV_PY=.venv\Scripts\python.exe"
+if exist ".venv" (
+    if not exist "%WINDOWS_VENV_PY%" (
+        REM Existing venv is missing a Windows python executable (possibly created on Linux/macOS)
+        if exist ".venv\bin\python" (
+            echo Existing virtual environment was built with POSIX paths. Rebuilding for Windows...
+        ) else (
+            echo Existing virtual environment is missing a python executable. Rebuilding...
+        )
+        set REBUILD_VENV=1
+    )
+)
+
+if defined REBUILD_VENV (
+    rmdir /s /q .venv
+)
+
 if not exist ".venv" (
     echo Creating virtual environment...
     %PYTHON_CMD% -m venv .venv
@@ -46,11 +64,9 @@ if not exist ".venv" (
 REM Prefer using the venv's python directly (don't rely on activate)
 echo Locating virtualenv python executable...
 
-REM Check the common venv locations explicitly to avoid expanding empty variables
-if exist ".venv\Scripts\python.exe" (
-    set "VENV_PY=.venv\Scripts\python.exe"
-) else if exist ".venv\bin\python" (
-    set "VENV_PY=.venv\bin\python"
+REM Use the Windows virtualenv interpreter path; fallback to system Python only if missing
+if exist "%WINDOWS_VENV_PY%" (
+    set "VENV_PY=%WINDOWS_VENV_PY%"
 ) else (
     echo Could not find a python executable inside .venv
     echo Will attempt to use the system python: %PYTHON_CMD%
@@ -72,8 +88,11 @@ if errorlevel 1 (
 echo [OK] Dependencies installed
 echo.
 
+if not defined PDF_COMPARE_HOST set "PDF_COMPARE_HOST=127.0.0.1"
+if not defined PDF_COMPARE_PORT set "PDF_COMPARE_PORT=5000"
+
 echo Starting PDF Compare Tool...
-echo Open your browser to: http://localhost:5000
+echo Open your browser to: http://%PDF_COMPARE_HOST%:%PDF_COMPARE_PORT%
 echo Press Ctrl+C to stop the server
 echo.
 

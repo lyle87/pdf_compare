@@ -6,13 +6,17 @@ This project includes several ways to run the application on any machine. Choose
 
 #### 1. **Windows Users** 🪟
 
-**Option A: Batch file (recommended)**
+**Option A: Single-file executable (no Python needed)**
+   - Build with `build_exe.bat` (see below) or download the prebuilt `PDFCompare.exe`
+   - Double-click `PDFCompare.exe` and your browser opens automatically
+
+**Option B: Batch file (recommended when Python is installed)**
    Just double-click: `run.bat`
-   
-**Option B: VBScript (if batch doesn't work)**
+
+**Option C: VBScript (if batch doesn't work)**
    Double-click: `run.vbs`
-   
-**Option C: Python (most reliable)**
+
+**Option D: Python (most reliable)**
    Run in Command Prompt:
    ```cmd
    python run.py

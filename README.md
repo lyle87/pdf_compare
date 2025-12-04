@@ -21,7 +21,12 @@ Side-by-side PDF comparison tool with text-based difference detection. Compare t
 ## Quick Start
 
 ### Windows
-**Simply double-click `run.bat`**
+**Option A: Double-click the prebuilt `PDFCompare.exe`** (no Python needed)
+
+- Build it yourself with `build_exe.bat` (see "Windows single-file .exe" below) or download a provided copy
+- Double-click `PDFCompare.exe` and your browser will open automatically
+
+**Option B: Double-click `run.bat`** (uses your local Python)
 
 Or manually:
 ```bash
@@ -82,6 +87,18 @@ chmod +x create_app_bundle.sh
 ```
 
 This creates a `PDF Compare.app` bundle you can double-click to launch.
+
+### Windows single-file .exe (Offline-friendly)
+
+Package everything (Python runtime + dependencies + assets) into a portable `.exe`:
+
+```bash
+build_exe.bat
+```
+
+- Output: `dist/PDFCompare.exe`
+- Share that file—recipients can double-click it without installing Python
+- An `uploads` folder is created beside the `.exe` to hold temporary files
 
 ## Usage
 
