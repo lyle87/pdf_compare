@@ -88,8 +88,11 @@ if errorlevel 1 (
 echo [OK] Dependencies installed
 echo.
 
+if not defined PDF_COMPARE_HOST set "PDF_COMPARE_HOST=127.0.0.1"
+if not defined PDF_COMPARE_PORT set "PDF_COMPARE_PORT=5000"
+
 echo Starting PDF Compare Tool...
-echo Open your browser to: http://localhost:5000
+echo Open your browser to: http://%PDF_COMPARE_HOST%:%PDF_COMPARE_PORT%
 echo Press Ctrl+C to stop the server
 echo.
 

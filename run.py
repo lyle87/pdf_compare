@@ -67,11 +67,18 @@ def main():
     print("✓ Dependencies installed\n")
 
     # Run the app
+    host = os.environ.get("PDF_COMPARE_HOST") or (
+        "127.0.0.1" if os.name == "nt" else "0.0.0.0"
+    )
+    port = os.environ.get("PDF_COMPARE_PORT", "5000")
+
     print("Starting PDF Compare Tool...")
-    print(f"Open your browser to: http://localhost:5000")
+    print(f"Open your browser to: http://{host}:{port}")
     print("Press Ctrl+C to stop the server\n")
 
-    subprocess.run([str(venv_python), "app.py"])
+    env = os.environ.copy()
+    env.update({"PDF_COMPARE_HOST": host, "PDF_COMPARE_PORT": str(port)})
+    subprocess.run([str(venv_python), "app.py"], env=env)
 
 if __name__ == "__main__":
     try:

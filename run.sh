@@ -49,10 +49,14 @@ pip install -q -r requirements.txt
 echo -e "${GREEN}✓${NC} Dependencies installed"
 
 echo ""
+
+: "${PDF_COMPARE_HOST:=0.0.0.0}"
+: "${PDF_COMPARE_PORT:=5000}"
+
 echo -e "${GREEN}Starting PDF Compare Tool...${NC}"
-echo -e "Open your browser to: ${BLUE}http://localhost:5000${NC}"
+echo -e "Open your browser to: ${BLUE}http://${PDF_COMPARE_HOST}:${PDF_COMPARE_PORT}${NC}"
 echo "Press ${YELLOW}Ctrl+C${NC} to stop the server"
 echo ""
 
-# Run the Flask app
-python app.py
+# Run the Flask app with explicit host/port hints
+PDF_COMPARE_HOST="$PDF_COMPARE_HOST" PDF_COMPARE_PORT="$PDF_COMPARE_PORT" python app.py
