@@ -163,5 +163,39 @@ def textdiff():
     return json.dumps({'left': left_boxes, 'right': right_boxes})
 
 
+def _find_free_port(host: str) -> int:
+    """Return an available port bound to the provided host."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((host, 0))
+        return s.getsockname()[1]
+
+
+def _run_app():
+    # Default to a localhost-only host on Windows to avoid corporate socket restrictions
+    default_host = "127.0.0.1" if os.name == "nt" else "0.0.0.0"
+    host = os.environ.get("PDF_COMPARE_HOST", default_host)
+    port = int(os.environ.get("PDF_COMPARE_PORT", "5000"))
+
+    def _start(host_value: str, port_value: int):
+        app.run(host=host_value, port=port_value, debug=True, use_reloader=False)
+
+    try:
+        _start(host, port)
+    except OSError as exc:
+        # Common on some Windows environments where binding to the requested host/port is forbidden
+        if getattr(exc, "errno", None) not in {13, 10013}:
+            raise
+
+        retry_host = "127.0.0.1"
+        retry_port = _find_free_port(retry_host)
+        print(
+            f"\nPort {port} on {host} is blocked or requires elevated permissions. "
+            f"Retrying on http://{retry_host}:{retry_port} ...\n"
+        )
+        _start(retry_host, retry_port)
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    _run_app()
