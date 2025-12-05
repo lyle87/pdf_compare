@@ -24,7 +24,9 @@ canvas { z-index: 1 }
 .cmm-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e0e0e0; }
 .cmm-table th, .cmm-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; text-align: left; }
 .cmm-table th { background: #f6f7f9; }
+.cmm-row-out-of-tolerance { background: #fdecea; }
 .sparkline { width: 140px; height: 36px; }
+.sparkline-out-of-tolerance { background: #fdecea; }
 .deviation-positive { color: #d32f2f; }
 .deviation-negative { color: #388e3c; }
 .deviation-neutral { color: #333; }
