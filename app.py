@@ -335,6 +335,23 @@ def _extract_cmm_rows(
             # Detect POS X-Y-Z multi-parent row
             if "pos x-y-z" in lname or "pos x-y-z" in lname:
                 current_parent_feature = feature_name.replace("X-Y-Z", "").strip()
+
+                if deviation_candidates:
+                    deviation_value = _parse_numeric_token(deviation_candidates[-1])
+                    nominal_value = _parse_numeric_token(nominal_candidates[-1]) if nominal_candidates else None
+                    actual_value = _parse_numeric_token(actual_candidates[-1]) if actual_candidates else None
+                    upper_tol_value = _parse_numeric_token(upper_tol_candidates[-1]) if upper_tol_candidates else None
+                    lower_tol_value = _parse_numeric_token(lower_tol_candidates[-1]) if lower_tol_candidates else None
+                    rows.append(
+                        (
+                            feature_name,
+                            deviation_value,
+                            upper_tol_value,
+                            lower_tol_value,
+                            nominal_value,
+                            actual_value,
+                        )
+                    )
                 continue
 
             # Normal single-line feature

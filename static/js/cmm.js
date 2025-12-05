@@ -18,10 +18,17 @@
     return `<span class="${cls}">${num.toFixed(4)}</span>`;
   }
 
+  function parseNumeric(value) {
+    if (value === null || value === undefined) return NaN;
+    if (typeof value === 'string' && value.trim() === '') return NaN;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : NaN;
+  }
+
   function firstNumeric(values) {
     for (const v of values) {
-      const num = Number(v);
-      if (!Number.isNaN(num)) return num;
+      const num = parseNumeric(v);
+      if (Number.isFinite(num)) return num;
     }
     return null;
   }
@@ -29,16 +36,16 @@
   function isOutOfTolerance(points) {
     if (!points || !points.length) return false;
     for (const pt of points) {
-      const nominal = Number(pt.nominal);
-      const actual = Number(pt.actual);
-      const deviation = Number(pt.deviation);
+      const nominal = parseNumeric(pt.nominal);
+      const actual = parseNumeric(pt.actual);
+      const deviation = parseNumeric(pt.deviation);
 
-      const upper = Number(pt.upperTol);
-      const lower = Number(pt.lowerTol);
+      const upper = parseNumeric(pt.upperTol);
+      const lower = parseNumeric(pt.lowerTol);
 
-      const hasActual = !Number.isNaN(nominal) && !Number.isNaN(actual);
-      const hasUpper = !Number.isNaN(upper);
-      const hasLower = !Number.isNaN(lower);
+      const hasActual = Number.isFinite(nominal) && Number.isFinite(actual);
+      const hasUpper = Number.isFinite(upper);
+      const hasLower = Number.isFinite(lower);
 
       if (hasActual) {
         if (hasUpper && actual > nominal + upper) return true;
@@ -59,7 +66,9 @@
     const width = canvas.width = 140;
     const height = canvas.height = 36;
 
-    const deviationValues = points.map(p => Number(p.deviation)).filter(v => !Number.isNaN(v));
+    const deviationValues = points
+      .map(p => parseNumeric(p.deviation))
+      .filter(v => Number.isFinite(v));
     const upperTol = firstNumeric(points.map(p => p.upperTol));
     const lowerTol = firstNumeric(points.map(p => p.lowerTol));
     const outOfTolerance = isOutOfTolerance(points);
