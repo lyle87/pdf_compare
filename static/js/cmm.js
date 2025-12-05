@@ -26,6 +26,21 @@
     return null;
   }
 
+  function isOutOfTolerance(points) {
+    if (!points || !points.length) return false;
+    for (const pt of points) {
+      const deviation = Number(pt.deviation);
+      if (Number.isNaN(deviation)) continue;
+
+      const upper = Number(pt.upperTol);
+      const lower = Number(pt.lowerTol);
+
+      if (!Number.isNaN(upper) && deviation > upper) return true;
+      if (!Number.isNaN(lower) && deviation < lower) return true;
+    }
+    return false;
+  }
+
   function renderSparkline(canvas, points) {
     if (!canvas || !points || points.length === 0) return;
     const ctx = canvas.getContext('2d');
@@ -35,6 +50,7 @@
     const deviationValues = points.map(p => Number(p.deviation)).filter(v => !Number.isNaN(v));
     const upperTol = firstNumeric(points.map(p => p.upperTol));
     const lowerTol = firstNumeric(points.map(p => p.lowerTol));
+    const outOfTolerance = isOutOfTolerance(points);
 
     const domainValues = deviationValues.slice();
     if (upperTol !== null) domainValues.push(upperTol);
@@ -47,6 +63,17 @@
     const range = (max - min) || 1;
 
     ctx.clearRect(0, 0, width, height);
+
+    if (outOfTolerance) {
+      ctx.save();
+      ctx.fillStyle = '#fdecea';
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+      canvas.classList.add('sparkline-out-of-tolerance');
+    } else {
+      canvas.classList.remove('sparkline-out-of-tolerance');
+    }
+
     ctx.strokeStyle = '#1e88e5';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -101,6 +128,11 @@
 
     features.forEach(feature => {
       const row = document.createElement('tr');
+      const outOfTolerance = isOutOfTolerance(feature.points || []);
+
+      if (outOfTolerance) {
+        row.classList.add('cmm-row-out-of-tolerance');
+      }
 
       const nameCell = document.createElement('td');
       nameCell.textContent = feature.name;
