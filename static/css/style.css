@@ -30,3 +30,16 @@ canvas { z-index: 1 }
 .deviation-positive { color: #d32f2f; }
 .deviation-negative { color: #388e3c; }
 .deviation-neutral { color: #333; }
+.sparkline-tooltip {
+  position: absolute;
+  background: #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  white-space: nowrap;
+  z-index: 999;
+}
