@@ -109,9 +109,10 @@ def normalize_text(s: str) -> str:
 
 def _is_numeric_token(token: str) -> bool:
     import re
-    # Allow integers, comma-separated integers, and leading-decimal values.
-    # Examples: 10, -10.25, 1,234.50, .0005
-    return re.match(r'^[+-]?(?:\d{1,3}(?:,\d{3})*|\d+|\d*\.\d+)$', token) is not None
+    # A numeric column token must be strictly numeric (no letters),
+    # optionally comma-separated and with an optional decimal part.
+    # Examples: 10, -10.25, 1,234.50
+    return re.match(r'^[+-]?\d[\d,]*(\.\d+)?$', token) is not None
 
 
 def _parse_numeric_token(token: str) -> Optional[float]:
@@ -168,21 +169,25 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             while tokens and all(ch in "|-—" for ch in tokens[-1]):
                 tokens.pop()
 
-            numeric_indices = [i for i, tok in enumerate(tokens) if _is_numeric_token(tok)]
-            if not numeric_indices:
+            col_start: Optional[int] = None
+            for i, tok in enumerate(tokens):
+                if _is_numeric_token(tok):
+                    col_start = i
+                    break
+
+            if col_start is None:
                 continue
 
-            first_numeric_idx = numeric_indices[0]
-            feature_tokens = tokens[:first_numeric_idx]
+            feature_tokens = tokens[:col_start]
+            feature_name = " ".join(feature_tokens).strip()
 
             # Require some feature text (with at least one alphabetic character)
             # before the numeric columns to avoid page numbers or legend rows.
-            feature_name = " ".join(feature_tokens).strip()
             if not feature_name or not any(ch.isalpha() for ch in feature_name):
                 continue
 
-            deviation_token = tokens[numeric_indices[-1]]
-            deviation_value = _parse_numeric_token(deviation_token)
+            numeric_tokens = [t for t in tokens if _is_numeric_token(t)]
+            deviation_value = _parse_numeric_token(numeric_tokens[-1])
             if deviation_value is None:
                 continue
 
