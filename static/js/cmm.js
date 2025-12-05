@@ -18,13 +18,44 @@
     return `<span class="${cls}">${num.toFixed(4)}</span>`;
   }
 
+  function firstNumeric(values) {
+    for (const v of values) {
+      const num = Number(v);
+      if (!Number.isNaN(num)) return num;
+    }
+    return null;
+  }
+
+  function isOutOfTolerance(points) {
+    if (!points || !points.length) return false;
+    for (const pt of points) {
+      const deviation = Number(pt.deviation);
+      if (Number.isNaN(deviation)) continue;
+
+      const upper = Number(pt.upperTol);
+      const lower = Number(pt.lowerTol);
+
+      if (!Number.isNaN(upper) && deviation > upper) return true;
+      if (!Number.isNaN(lower) && deviation < lower) return true;
+    }
+    return false;
+  }
+
   function renderSparkline(canvas, points) {
     if (!canvas || !points || points.length === 0) return;
     const ctx = canvas.getContext('2d');
     const width = canvas.width = 140;
     const height = canvas.height = 36;
 
-    const values = points.map(p => Number(p.deviation)).filter(v => !Number.isNaN(v));
+    const deviationValues = points.map(p => Number(p.deviation)).filter(v => !Number.isNaN(v));
+    const upperTol = firstNumeric(points.map(p => p.upperTol));
+    const lowerTol = firstNumeric(points.map(p => p.lowerTol));
+    const outOfTolerance = isOutOfTolerance(points);
+
+    const domainValues = deviationValues.slice();
+    if (upperTol !== null) domainValues.push(upperTol);
+    if (lowerTol !== null) domainValues.push(lowerTol);
+    const values = domainValues;
     if (values.length === 0) return;
 
     const min = Math.min(...values);
@@ -32,12 +63,23 @@
     const range = (max - min) || 1;
 
     ctx.clearRect(0, 0, width, height);
+
+    if (outOfTolerance) {
+      ctx.save();
+      ctx.fillStyle = '#fdecea';
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+      canvas.classList.add('sparkline-out-of-tolerance');
+    } else {
+      canvas.classList.remove('sparkline-out-of-tolerance');
+    }
+
     ctx.strokeStyle = '#1e88e5';
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    values.forEach((v, idx) => {
-      const x = values.length === 1 ? width / 2 : (idx / (values.length - 1)) * (width - 6) + 3;
+    deviationValues.forEach((v, idx) => {
+      const x = deviationValues.length === 1 ? width / 2 : (idx / (deviationValues.length - 1)) * (width - 6) + 3;
       const y = height - ((v - min) / range) * (height - 6) - 3;
       if (idx === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -56,6 +98,22 @@
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    const drawTolerance = (value, color) => {
+      if (value === null) return;
+      const y = height - ((value - min) / range) * (height - 6) - 3;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+
+    drawTolerance(upperTol, '#c62828');
+    drawTolerance(lowerTol, '#2e7d32');
   }
 
   function renderTable(data) {
@@ -70,6 +128,11 @@
 
     features.forEach(feature => {
       const row = document.createElement('tr');
+      const outOfTolerance = isOutOfTolerance(feature.points || []);
+
+      if (outOfTolerance) {
+        row.classList.add('cmm-row-out-of-tolerance');
+      }
 
       const nameCell = document.createElement('td');
       nameCell.textContent = feature.name;
@@ -112,6 +175,7 @@
       startDate: form.startDate.value || null,
       endDate: form.endDate.value || null,
       partType: form.partType.value || null,
+      dieNumber: form.dieNumber.value.trim() || null,
     };
 
     if (!payload.folder) {
