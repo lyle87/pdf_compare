@@ -126,7 +126,15 @@ def _parse_numeric_token(token: str) -> Optional[float]:
 
 
 def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
-    """Return (feature_name, deviation) rows parsed from a ZEISS CMM PDF."""
+    """
+    Return (feature_name, deviation) rows parsed from a ZEISS CMM PDF.
+
+    Implementation note:
+    ---------------------
+    We use page.get_text("words") and column X positions to reliably
+    pick the numeric value that sits under the "Deviation" header,
+    instead of trying to reconstruct rows from the plain text stream.
+    """
 
     if fitz is None:
         raise RuntimeError("PyMuPDF is required to parse CMM reports")
@@ -135,75 +143,112 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
     doc = fitz.open(path)
 
     for page in doc:
-        text = page.get_text("text")
+        words = page.get_text("words")  # (x0, y0, x1, y1, text, block, line, word)
 
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line:
+        if not words:
+            continue
+
+        # --- 1) Locate column X positions from the header row ---
+        actual_x = None
+        deviation_x = None
+        hist_x = None
+
+        for x0, y0, x1, y1, text, *_ in words:
+            if text == "Actual":
+                actual_x = x0
+            elif text == "Deviation":
+                deviation_x = x0
+            elif text == "Histogram":
+                hist_x = x0
+
+        # If we don't see a CMM table header on this page, skip it
+        if actual_x is None or deviation_x is None or hist_x is None:
+            continue
+
+        # Anything left of this X is considered "feature name"
+        feature_limit_x = actual_x - 5.0
+        deviation_min_x = deviation_x - 5.0
+        deviation_max_x = hist_x + 5.0
+
+        # --- 2) Group words into rows by Y coordinate ---
+        word_objs = []
+        for (x0, y0, x1, y1, text, *_) in words:
+            y_center = (y0 + y1) / 2.0
+            word_objs.append({"x0": x0, "y": y_center, "text": text})
+
+        # Sort by Y then X
+        word_objs.sort(key=lambda w: (w["y"], w["x0"]))
+
+        row_groups: List[List[Dict[str, object]]] = []
+        current_row: List[Dict[str, object]] = []
+        last_y: Optional[float] = None
+
+        # simple y-clustering: same row if within 1.0 units
+        for w in word_objs:
+            if last_y is None or abs(w["y"] - last_y) <= 1.0:
+                current_row.append(w)
+            else:
+                if current_row:
+                    row_groups.append(current_row)
+                current_row = [w]
+            last_y = w["y"]
+
+        if current_row:
+            row_groups.append(current_row)
+
+        # --- 3) For each row, build feature name & pick deviation value ---
+        for group in row_groups:
+            feature_tokens: List[str] = []
+            deviation_candidates: List[Tuple[float, str]] = []
+
+            for w in group:
+                text = w["text"]
+                x0 = w["x0"]
+
+                if not text.strip():
+                    continue
+
+                # Left side of the table -> feature name
+                if x0 < feature_limit_x:
+                    feature_tokens.append(text)
+                else:
+                    # Right side: check for numeric tokens in the Deviation column band
+                    if _is_numeric_token(text) and deviation_min_x <= x0 < deviation_max_x:
+                        deviation_candidates.append((x0, text))
+
+            if not feature_tokens or not deviation_candidates:
                 continue
 
-            lower_line = line.lower()
-            if (
-                "plan name" in lower_line
-                or "part serial" in lower_line
-                or lower_line.startswith("date ")
-                or ("deviation" in lower_line and "actual" in lower_line)
-            ):
-                # Skip headers and metadata
-                continue
-
-            raw_tokens = line.split()
-
-            # Strip histogram bars like "|"  "--|" etc
-            def _strip_histogram(token: str) -> str:
-                while token and token[-1] in "|-—":
-                    token = token[:-1]
-                return token
-
-            tokens: List[str] = []
-            for tok in raw_tokens:
-                cleaned = _strip_histogram(tok)
-                if cleaned:
-                    tokens.append(cleaned)
-
-            # remove trailing histogram-only tokens
-            while tokens and all(ch in "|-—" for ch in tokens[-1]):
-                tokens.pop()
-
-            if not tokens:
-                continue
-
-            # --- KEY CHANGE ---
-            # Find first strictly-numeric token → start of numeric columns
-            col_start = None
-            for i, tok in enumerate(tokens):
-                if _is_numeric_token(tok):
-                    col_start = i
-                    break
-
-            if col_start is None:
-                continue
-
-            # Everything before numeric columns is feature name
-            feature_tokens = tokens[:col_start]
             feature_name = " ".join(feature_tokens).strip()
+            lname = feature_name.lower()
 
-            # Must have at least one A-Z letter to avoid X/Y/Z subrows
-            if not feature_name or not any(c.isalpha() for c in feature_name):
+            # Filter out obvious headers / metadata
+            if (
+                "plan name" in lname
+                or "part serial" in lname
+                or lname.startswith("date ")
+                or "part description" in lname
+                or "temperature data" in lname
+                or "heading" in lname
+                or feature_name in ("Upper", "Name", "Lower", "Actual", "Nominal", "Deviation Histogram")
+            ):
                 continue
 
-            # Extract all numeric tokens → deviation is LAST numeric token
-            numeric_tokens = [tok for tok in tokens if _is_numeric_token(tok)]
-            if not numeric_tokens:
+            # Require at least one alphabetic character in the feature name
+            if not any(c.isalpha() for c in feature_name):
                 continue
 
-            deviation_value = _parse_numeric_token(numeric_tokens[-1])
-            if deviation_value is None:
+            # Choose the rightmost numeric in the Deviation band as the deviation value
+            deviation_candidates.sort(key=lambda t: t[0])  # sort by x
+            dev_token = deviation_candidates[-1][1]
+            dev_value = _parse_numeric_token(dev_token)
+            if dev_value is None:
                 continue
 
-            rows.append((feature_name, deviation_value))
+            rows.append((feature_name, dev_value))
 
     return rows
+
 
 
 
