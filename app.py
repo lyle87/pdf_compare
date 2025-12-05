@@ -126,7 +126,7 @@ def _parse_numeric_token(token: str) -> Optional[float]:
 
 
 def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
-    """Return (feature, deviation) rows parsed from a ZEISS CMM PDF."""
+    """Return (feature_name, deviation) rows parsed from a ZEISS CMM PDF."""
 
     if fitz is None:
         raise RuntimeError("PyMuPDF is required to parse CMM reports")
@@ -136,6 +136,7 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
 
     for page in doc:
         text = page.get_text("text")
+
         for raw_line in text.splitlines():
             line = raw_line.strip()
             if not line:
@@ -146,13 +147,14 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 "plan name" in lower_line
                 or "part serial" in lower_line
                 or lower_line.startswith("date ")
-                or "deviation" in lower_line and "actual" in lower_line
+                or ("deviation" in lower_line and "actual" in lower_line)
             ):
-                # Skip header rows and report metadata
+                # Skip headers and metadata
                 continue
 
             raw_tokens = line.split()
 
+            # Strip histogram bars like "|"  "--|" etc
             def _strip_histogram(token: str) -> str:
                 while token and token[-1] in "|-—":
                     token = token[:-1]
@@ -164,12 +166,16 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 if cleaned:
                     tokens.append(cleaned)
 
-            # Drop trailing histogram/graph markers left as their own tokens so
-            # we can focus on numeric columns at the end of the row.
+            # remove trailing histogram-only tokens
             while tokens and all(ch in "|-—" for ch in tokens[-1]):
                 tokens.pop()
 
-            col_start: Optional[int] = None
+            if not tokens:
+                continue
+
+            # --- KEY CHANGE ---
+            # Find first strictly-numeric token → start of numeric columns
+            col_start = None
             for i, tok in enumerate(tokens):
                 if _is_numeric_token(tok):
                     col_start = i
@@ -178,15 +184,19 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             if col_start is None:
                 continue
 
+            # Everything before numeric columns is feature name
             feature_tokens = tokens[:col_start]
             feature_name = " ".join(feature_tokens).strip()
 
-            # Require some feature text (with at least one alphabetic character)
-            # before the numeric columns to avoid page numbers or legend rows.
-            if not feature_name or not any(ch.isalpha() for ch in feature_name):
+            # Must have at least one A-Z letter to avoid X/Y/Z subrows
+            if not feature_name or not any(c.isalpha() for c in feature_name):
                 continue
 
-            numeric_tokens = [t for t in tokens if _is_numeric_token(t)]
+            # Extract all numeric tokens → deviation is LAST numeric token
+            numeric_tokens = [tok for tok in tokens if _is_numeric_token(tok)]
+            if not numeric_tokens:
+                continue
+
             deviation_value = _parse_numeric_token(numeric_tokens[-1])
             if deviation_value is None:
                 continue
@@ -194,6 +204,7 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             rows.append((feature_name, deviation_value))
 
     return rows
+
 
 
 def _collect_cmm_data(
