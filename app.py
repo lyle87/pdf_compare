@@ -148,10 +148,21 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 # Skip header rows and report metadata
                 continue
 
-            tokens = line.split()
+            raw_tokens = line.split()
 
-            # Drop trailing histogram/graph markers ("|", "-", "—") so we can
-            # focus on numeric columns at the end of the row.
+            def _strip_histogram(token: str) -> str:
+                while token and token[-1] in "|-—":
+                    token = token[:-1]
+                return token
+
+            tokens: List[str] = []
+            for tok in raw_tokens:
+                cleaned = _strip_histogram(tok)
+                if cleaned:
+                    tokens.append(cleaned)
+
+            # Drop trailing histogram/graph markers left as their own tokens so
+            # we can focus on numeric columns at the end of the row.
             while tokens and all(ch in "|-—" for ch in tokens[-1]):
                 tokens.pop()
 
@@ -159,13 +170,14 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             while tokens and _is_numeric_token(tokens[-1]):
                 numeric_tail.append(tokens.pop())
 
-            # Require at least a deviation plus one other numeric column to avoid
-            # picking up serial numbers / page numbers at the end of lines.
-            if len(numeric_tail) < 2 or not tokens:
+            # Allow single numeric columns (some reports only show deviation),
+            # but insist on a non-empty feature name that includes at least one
+            # alphabetic character to avoid picking up page numbers.
+            if len(numeric_tail) < 1 or not tokens:
                 continue
 
             feature_name = " ".join(tokens).strip()
-            if not feature_name:
+            if not feature_name or not any(ch.isalpha() for ch in feature_name):
                 continue
 
             deviation_token = numeric_tail[0]
