@@ -127,9 +127,9 @@ def _parse_numeric_token(token: str) -> Optional[float]:
 
 def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
     """
-    Return (feature, deviation) rows parsed from a ZEISS CMM PDF.
-    Uses word-level coordinates for reliable column detection and
-    supports multi-line POS X-Y-Z features.
+    Extract ZEISS CMM feature rows with support for:
+    - Standard single-line features
+    - POS X-Y-Z multi-line features → converted into separate X, Y, Z features.
     """
 
     if fitz is None:
@@ -143,141 +143,120 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
         if not words:
             continue
 
-        # --------------------------------------------------------
-        # 1. Detect column X positions from header labels
-        # --------------------------------------------------------
+        # Locate header columns
         actual_x = deviation_x = hist_x = None
 
         for x0, y0, x1, y1, text, *_ in words:
-            if text.strip() == "Actual":
+            if text == "Actual":
                 actual_x = x0
-            elif text.strip() == "Deviation":
+            elif text == "Deviation":
                 deviation_x = x0
-            elif text.strip() == "Histogram":
+            elif text == "Histogram":
                 hist_x = x0
 
-        # If no header present, skip this page
         if actual_x is None or deviation_x is None or hist_x is None:
             continue
 
-        # Define column regions
         feature_limit_x = actual_x - 5
         deviation_min_x = deviation_x - 5
         deviation_max_x = hist_x + 5
 
-        # --------------------------------------------------------
-        # 2. Convert words into row clusters based on Y position
-        # --------------------------------------------------------
-        word_objs = []
+        # Convert to row clusters by Y
+        items = []
         for (x0, y0, x1, y1, text, *_) in words:
             y_center = (y0 + y1) / 2
-            word_objs.append({"x0": x0, "y": y_center, "text": text})
+            items.append({"x": x0, "y": y_center, "text": text})
 
-        word_objs.sort(key=lambda w: (w["y"], w["x0"]))
+        items.sort(key=lambda w: (w["y"], w["x"]))
 
         row_groups = []
-        current_row = []
+        current = []
         last_y = None
 
-        for w in word_objs:
+        for w in items:
             if last_y is None or abs(w["y"] - last_y) <= 1.0:
-                current_row.append(w)
+                current.append(w)
             else:
-                if current_row:
-                    row_groups.append(current_row)
-                current_row = [w]
+                row_groups.append(current)
+                current = [w]
             last_y = w["y"]
 
-        if current_row:
-            row_groups.append(current_row)
+        if current:
+            row_groups.append(current)
 
-        # --------------------------------------------------------
-        # 3. Extract parent + child row information
-        # --------------------------------------------------------
-        pending_parent = None
+        # Parent state
+        current_parent_feature = None
 
-        def is_child_axis(token: str) -> bool:
-            return token in ("X", "Y", "Z")
+        def parse_axis_row(text):
+            return text in ("X", "Y", "Z")
 
         for group in row_groups:
-
             feature_tokens = []
             deviation_candidates = []
-            child_deviations = []
+            axis_row_label = None
 
-            # First pass: detect if this row is child-only (X/Y/Z)
-            child_only_row = False
+            # Detect axis-only child rows
             for w in group:
-                text = w["text"].strip()
-                if is_child_axis(text):
-                    child_only_row = True
+                if parse_axis_row(w["text"].strip()):
+                    axis_row_label = w["text"].strip()
 
-            # --------------------------------------------------------
-            # CHILD ROW HANDLING (X,Y,Z)
-            # --------------------------------------------------------
-            if child_only_row and pending_parent is not None:
-                # Collect deviation from child row to use for parent
+            # Handle axis child rows → create separate features
+            if axis_row_label and current_parent_feature:
+                # collect deviation number
+                dev_val = None
                 for w in group:
-                    text = w["text"].strip()
-                    x0 = w["x0"]
+                    tx = w["text"].strip()
+                    if _is_numeric_token(tx) and deviation_min_x <= w["x"] < deviation_max_x:
+                        dev_val = _parse_numeric_token(tx)
 
-                    if _is_numeric_token(text) and deviation_min_x <= x0 < deviation_max_x:
-                        child_deviations.append(text)
+                if dev_val is not None:
+                    # Example: H203 POS X
+                    feature_full = f"{current_parent_feature} {axis_row_label}"
+                    rows.append((feature_full, dev_val))
 
-                if child_deviations:
-                    pending_parent["child_dev"].append(child_deviations[-1])
                 continue
 
-            # --------------------------------------------------------
-            # PARENT FEATURE ROW HANDLING
-            # --------------------------------------------------------
+            # Otherwise, process normally (parent row or single-line feature)
             for w in group:
-                text = w["text"].strip()
-                x0 = w["x0"]
+                tx = w["text"].strip()
+                x = w["x"]
 
-                if x0 < feature_limit_x:
-                    feature_tokens.append(text)
+                if x < feature_limit_x:
+                    feature_tokens.append(tx)
                 else:
-                    if _is_numeric_token(text) and deviation_min_x <= x0 < deviation_max_x:
-                        deviation_candidates.append(text)
+                    if _is_numeric_token(tx) and deviation_min_x <= x < deviation_max_x:
+                        deviation_candidates.append(tx)
 
-            # No feature name? skip
             feature_name = " ".join(feature_tokens).strip()
+
             if not feature_name or not any(c.isalpha() for c in feature_name):
                 continue
 
             lname = feature_name.lower()
             if (
-                "plan name" in lname
-                or "part serial" in lname
-                or lname.startswith("date")
-                or lname.startswith("actual")
-                or "histogram" in lname
-                or "nominal" in lname
+                "plan name" in lname or
+                "part serial" in lname or
+                lname.startswith("date") or
+                "histogram" in lname or
+                "nominal" in lname or
+                "actual" in lname
             ):
                 continue
 
-            # Start new parent block
-            pending_parent = {
-                "name": feature_name,
-                "own_dev": deviation_candidates[-1] if deviation_candidates else None,
-                "child_dev": []
-            }
+            # Detect POS X-Y-Z multi-parent row
+            if "pos x-y-z" in lname or "pos x-y-z" in lname:
+                current_parent_feature = feature_name.replace("X-Y-Z", "").strip()
+                continue
 
-            # --------------------------------------------------------
-            # FINALIZE deviation value for this feature
-            # --------------------------------------------------------
-            deviation_value = None
+            # Normal single-line feature
+            current_parent_feature = None
 
-            if pending_parent["own_dev"] is not None:
-                deviation_value = _parse_numeric_token(pending_parent["own_dev"])
-            elif pending_parent["child_dev"]:
-                deviation_value = _parse_numeric_token(pending_parent["child_dev"][0])
-
-            if deviation_value is not None:
-                rows.append((pending_parent["name"], deviation_value))
+            if deviation_candidates:
+                deviation_value = _parse_numeric_token(deviation_candidates[-1])
+                rows.append((feature_name, deviation_value))
 
     return rows
+
 
 
 
