@@ -109,7 +109,9 @@ def normalize_text(s: str) -> str:
 
 def _is_numeric_token(token: str) -> bool:
     import re
-    return re.match(r'^[+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?$', token) is not None
+    # Allow integers, comma-separated integers, and leading-decimal values.
+    # Examples: 10, -10.25, 1,234.50, .0005
+    return re.match(r'^[+-]?(?:\d{1,3}(?:,\d{3})*|\d+|\d*\.\d+)$', token) is not None
 
 
 def _parse_numeric_token(token: str) -> Optional[float]:
@@ -166,21 +168,20 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             while tokens and all(ch in "|-—" for ch in tokens[-1]):
                 tokens.pop()
 
-            numeric_tail: List[str] = []
-            while tokens and _is_numeric_token(tokens[-1]):
-                numeric_tail.append(tokens.pop())
-
-            # Allow single numeric columns (some reports only show deviation),
-            # but insist on a non-empty feature name that includes at least one
-            # alphabetic character to avoid picking up page numbers.
-            if len(numeric_tail) < 1 or not tokens:
+            numeric_indices = [i for i, tok in enumerate(tokens) if _is_numeric_token(tok)]
+            if not numeric_indices:
                 continue
 
-            feature_name = " ".join(tokens).strip()
+            first_numeric_idx = numeric_indices[0]
+            feature_tokens = tokens[:first_numeric_idx]
+
+            # Require some feature text (with at least one alphabetic character)
+            # before the numeric columns to avoid page numbers or legend rows.
+            feature_name = " ".join(feature_tokens).strip()
             if not feature_name or not any(ch.isalpha() for ch in feature_name):
                 continue
 
-            deviation_token = numeric_tail[0]
+            deviation_token = tokens[numeric_indices[-1]]
             deviation_value = _parse_numeric_token(deviation_token)
             if deviation_value is None:
                 continue
