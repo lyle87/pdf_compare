@@ -60,15 +60,69 @@
     return false;
   }
 
+  let tooltipEl;
+
+  function getTooltip() {
+    if (!tooltipEl) {
+      tooltipEl = document.createElement('div');
+      tooltipEl.className = 'sparkline-tooltip';
+      document.body.appendChild(tooltipEl);
+    }
+    return tooltipEl;
+  }
+
+  function showTooltip(canvas, text, x, y) {
+    const tooltip = getTooltip();
+    tooltip.textContent = text;
+    const rect = canvas.getBoundingClientRect();
+    tooltip.style.left = `${rect.left + x + window.scrollX + 8}px`;
+    tooltip.style.top = `${rect.top + y + window.scrollY - tooltip.offsetHeight - 6}px`;
+    tooltip.style.opacity = '1';
+  }
+
+  function hideTooltip() {
+    if (tooltipEl) tooltipEl.style.opacity = '0';
+  }
+
+  function attachHover(canvas) {
+    canvas.addEventListener('mousemove', (event) => {
+      const points = canvas._sparklinePoints || [];
+      if (!points.length) return hideTooltip();
+
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const hit = points.find(pt => {
+        const dx = pt.x - x;
+        const dy = pt.y - y;
+        return Math.hypot(dx, dy) <= 6;
+      });
+
+      if (hit) {
+        showTooltip(canvas, hit.label, hit.x, hit.y);
+      } else {
+        hideTooltip();
+      }
+    });
+
+    canvas.addEventListener('mouseleave', hideTooltip);
+  }
+
   function renderSparkline(canvas, points) {
     if (!canvas || !points || points.length === 0) return;
     const ctx = canvas.getContext('2d');
     const width = canvas.width = 140;
     const height = canvas.height = 36;
 
-    const deviationValues = points
-      .map(p => parseNumeric(p.deviation))
-      .filter(v => Number.isFinite(v));
+    const plottedPoints = points
+      .map((p, idx) => {
+        const deviation = parseNumeric(p.deviation);
+        if (!Number.isFinite(deviation)) return null;
+        return { deviation, report: p.report || `Report ${idx + 1}` };
+      })
+      .filter(Boolean);
+
+    const deviationValues = plottedPoints.map(p => p.deviation);
     const upperTol = firstNumeric(points.map(p => p.upperTol));
     const lowerTol = firstNumeric(points.map(p => p.lowerTol));
     const outOfTolerance = isOutOfTolerance(points);
@@ -99,13 +153,24 @@
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    deviationValues.forEach((v, idx) => {
+    const pointMeta = [];
+    plottedPoints.forEach((pt, idx) => {
       const x = deviationValues.length === 1 ? width / 2 : (idx / (deviationValues.length - 1)) * (width - 6) + 3;
-      const y = height - ((v - min) / range) * (height - 6) - 3;
+      const y = height - ((pt.deviation - min) / range) * (height - 6) - 3;
+      pointMeta.push({ x, y, label: pt.report });
       if (idx === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
+
+    ctx.fillStyle = '#1e88e5';
+    plottedPoints.forEach((pt, idx) => {
+      const x = deviationValues.length === 1 ? width / 2 : (idx / (deviationValues.length - 1)) * (width - 6) + 3;
+      const y = height - ((pt.deviation - min) / range) * (height - 6) - 3;
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
 
     // Draw baseline at 0 if within range
     if (min <= 0 && max >= 0) {
@@ -135,6 +200,12 @@
 
     drawTolerance(upperTol, '#c62828');
     drawTolerance(lowerTol, '#2e7d32');
+
+    canvas._sparklinePoints = pointMeta;
+    if (!canvas._sparklineHoverAttached) {
+      attachHover(canvas);
+      canvas._sparklineHoverAttached = true;
+    }
   }
 
   function renderTable(data) {
