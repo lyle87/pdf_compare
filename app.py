@@ -127,13 +127,9 @@ def _parse_numeric_token(token: str) -> Optional[float]:
 
 def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
     """
-    Return (feature_name, deviation) rows parsed from a ZEISS CMM PDF.
-
-    Implementation note:
-    ---------------------
-    We use page.get_text("words") and column X positions to reliably
-    pick the numeric value that sits under the "Deviation" header,
-    instead of trying to reconstruct rows from the plain text stream.
+    Return (feature, deviation) rows parsed from a ZEISS CMM PDF.
+    Uses word-level coordinates for reliable column detection and
+    supports multi-line POS X-Y-Z features.
     """
 
     if fitz is None:
@@ -143,47 +139,46 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
     doc = fitz.open(path)
 
     for page in doc:
-        words = page.get_text("words")  # (x0, y0, x1, y1, text, block, line, word)
-
+        words = page.get_text("words")
         if not words:
             continue
 
-        # --- 1) Locate column X positions from the header row ---
-        actual_x = None
-        deviation_x = None
-        hist_x = None
+        # --------------------------------------------------------
+        # 1. Detect column X positions from header labels
+        # --------------------------------------------------------
+        actual_x = deviation_x = hist_x = None
 
         for x0, y0, x1, y1, text, *_ in words:
-            if text == "Actual":
+            if text.strip() == "Actual":
                 actual_x = x0
-            elif text == "Deviation":
+            elif text.strip() == "Deviation":
                 deviation_x = x0
-            elif text == "Histogram":
+            elif text.strip() == "Histogram":
                 hist_x = x0
 
-        # If we don't see a CMM table header on this page, skip it
+        # If no header present, skip this page
         if actual_x is None or deviation_x is None or hist_x is None:
             continue
 
-        # Anything left of this X is considered "feature name"
-        feature_limit_x = actual_x - 5.0
-        deviation_min_x = deviation_x - 5.0
-        deviation_max_x = hist_x + 5.0
+        # Define column regions
+        feature_limit_x = actual_x - 5
+        deviation_min_x = deviation_x - 5
+        deviation_max_x = hist_x + 5
 
-        # --- 2) Group words into rows by Y coordinate ---
+        # --------------------------------------------------------
+        # 2. Convert words into row clusters based on Y position
+        # --------------------------------------------------------
         word_objs = []
         for (x0, y0, x1, y1, text, *_) in words:
-            y_center = (y0 + y1) / 2.0
+            y_center = (y0 + y1) / 2
             word_objs.append({"x0": x0, "y": y_center, "text": text})
 
-        # Sort by Y then X
         word_objs.sort(key=lambda w: (w["y"], w["x0"]))
 
-        row_groups: List[List[Dict[str, object]]] = []
-        current_row: List[Dict[str, object]] = []
-        last_y: Optional[float] = None
+        row_groups = []
+        current_row = []
+        last_y = None
 
-        # simple y-clustering: same row if within 1.0 units
         for w in word_objs:
             if last_y is None or abs(w["y"] - last_y) <= 1.0:
                 current_row.append(w)
@@ -196,58 +191,94 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
         if current_row:
             row_groups.append(current_row)
 
-        # --- 3) For each row, build feature name & pick deviation value ---
-        for group in row_groups:
-            feature_tokens: List[str] = []
-            deviation_candidates: List[Tuple[float, str]] = []
+        # --------------------------------------------------------
+        # 3. Extract parent + child row information
+        # --------------------------------------------------------
+        pending_parent = None
 
+        def is_child_axis(token: str) -> bool:
+            return token in ("X", "Y", "Z")
+
+        for group in row_groups:
+
+            feature_tokens = []
+            deviation_candidates = []
+            child_deviations = []
+
+            # First pass: detect if this row is child-only (X/Y/Z)
+            child_only_row = False
             for w in group:
-                text = w["text"]
+                text = w["text"].strip()
+                if is_child_axis(text):
+                    child_only_row = True
+
+            # --------------------------------------------------------
+            # CHILD ROW HANDLING (X,Y,Z)
+            # --------------------------------------------------------
+            if child_only_row and pending_parent is not None:
+                # Collect deviation from child row to use for parent
+                for w in group:
+                    text = w["text"].strip()
+                    x0 = w["x0"]
+
+                    if _is_numeric_token(text) and deviation_min_x <= x0 < deviation_max_x:
+                        child_deviations.append(text)
+
+                if child_deviations:
+                    pending_parent["child_dev"].append(child_deviations[-1])
+                continue
+
+            # --------------------------------------------------------
+            # PARENT FEATURE ROW HANDLING
+            # --------------------------------------------------------
+            for w in group:
+                text = w["text"].strip()
                 x0 = w["x0"]
 
-                if not text.strip():
-                    continue
-
-                # Left side of the table -> feature name
                 if x0 < feature_limit_x:
                     feature_tokens.append(text)
                 else:
-                    # Right side: check for numeric tokens in the Deviation column band
                     if _is_numeric_token(text) and deviation_min_x <= x0 < deviation_max_x:
-                        deviation_candidates.append((x0, text))
+                        deviation_candidates.append(text)
 
-            if not feature_tokens or not deviation_candidates:
+            # No feature name? skip
+            feature_name = " ".join(feature_tokens).strip()
+            if not feature_name or not any(c.isalpha() for c in feature_name):
                 continue
 
-            feature_name = " ".join(feature_tokens).strip()
             lname = feature_name.lower()
-
-            # Filter out obvious headers / metadata
             if (
                 "plan name" in lname
                 or "part serial" in lname
-                or lname.startswith("date ")
-                or "part description" in lname
-                or "temperature data" in lname
-                or "heading" in lname
-                or feature_name in ("Upper", "Name", "Lower", "Actual", "Nominal", "Deviation Histogram")
+                or lname.startswith("date")
+                or lname.startswith("actual")
+                or "histogram" in lname
+                or "nominal" in lname
             ):
                 continue
 
-            # Require at least one alphabetic character in the feature name
-            if not any(c.isalpha() for c in feature_name):
-                continue
+            # Start new parent block
+            pending_parent = {
+                "name": feature_name,
+                "own_dev": deviation_candidates[-1] if deviation_candidates else None,
+                "child_dev": []
+            }
 
-            # Choose the rightmost numeric in the Deviation band as the deviation value
-            deviation_candidates.sort(key=lambda t: t[0])  # sort by x
-            dev_token = deviation_candidates[-1][1]
-            dev_value = _parse_numeric_token(dev_token)
-            if dev_value is None:
-                continue
+            # --------------------------------------------------------
+            # FINALIZE deviation value for this feature
+            # --------------------------------------------------------
+            deviation_value = None
 
-            rows.append((feature_name, dev_value))
+            if pending_parent["own_dev"] is not None:
+                deviation_value = _parse_numeric_token(pending_parent["own_dev"])
+            elif pending_parent["child_dev"]:
+                deviation_value = _parse_numeric_token(pending_parent["child_dev"][0])
+
+            if deviation_value is not None:
+                rows.append((pending_parent["name"], deviation_value))
 
     return rows
+
 
 
 
