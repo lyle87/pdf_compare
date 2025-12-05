@@ -125,6 +125,25 @@ def _parse_numeric_token(token: str) -> Optional[float]:
         return None
 
 
+def _extract_die_number(filename: str) -> Optional[str]:
+    """Return the two-digit die number embedded after a WB0i prefix."""
+
+    import re
+
+    match = re.search(r"wb0i(\d+)", filename, flags=re.IGNORECASE)
+    if not match:
+        return None
+
+    digits = "".join(ch for ch in match.group(1) if ch.isdigit())
+    if not digits:
+        return None
+
+    if len(digits) >= 2:
+        digits = digits[-2:]
+
+    return digits.zfill(2)
+
+
 def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
     """
     Extract ZEISS CMM feature rows with support for:
@@ -267,12 +286,21 @@ def _collect_cmm_data(
     start_date: Optional[datetime],
     end_date: Optional[datetime],
     part_type: Optional[str],
+    die_number: Optional[str],
     errors: Optional[List[str]] = None,
 ) -> Dict[str, List[Dict[str, object]]]:
     """Scan PDFs in *folder* and return feature deviations keyed by feature name."""
 
     results: Dict[str, List[Dict[str, object]]] = {}
     part_type_upper = part_type.upper() if part_type else None
+    die_filter = None
+
+    if die_number:
+        digits = "".join(ch for ch in die_number if ch.isdigit())
+        if digits:
+            if len(digits) >= 2:
+                digits = digits[-2:]
+            die_filter = digits.zfill(2)
 
     for entry in sorted(os.listdir(folder)):
         if not entry.lower().endswith('.pdf'):
@@ -284,6 +312,11 @@ def _collect_cmm_data(
 
         if part_type_upper and part_type_upper not in entry.upper():
             continue
+
+        if die_filter:
+            extracted_die = _extract_die_number(entry)
+            if extracted_die != die_filter:
+                continue
 
         mtime = datetime.fromtimestamp(os.path.getmtime(full_path))
         if start_date and mtime < start_date:
@@ -325,6 +358,7 @@ def cmm_summary():
     payload = request.get_json(silent=True) or {}
     folder = payload.get('folder')
     part_type = payload.get('partType')
+    die_number = payload.get('dieNumber')
     start_date = _parse_date(payload.get('startDate'))
     end_date = _parse_date(payload.get('endDate'))
 
@@ -336,7 +370,7 @@ def cmm_summary():
         return {'error': 'PyMuPDF is required to parse CMM reports'}, 500
 
     errors: List[str] = []
-    data = _collect_cmm_data(folder, start_date, end_date, part_type, errors)
+    data = _collect_cmm_data(folder, start_date, end_date, part_type, die_number, errors)
 
     features = []
     report_names = set()

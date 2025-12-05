@@ -112,6 +112,7 @@
       startDate: form.startDate.value || null,
       endDate: form.endDate.value || null,
       partType: form.partType.value || null,
+      dieNumber: form.dieNumber.value.trim() || null,
     };
 
     if (!payload.folder) {
