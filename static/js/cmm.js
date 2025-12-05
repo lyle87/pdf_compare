@@ -29,14 +29,26 @@
   function isOutOfTolerance(points) {
     if (!points || !points.length) return false;
     for (const pt of points) {
+      const nominal = Number(pt.nominal);
+      const actual = Number(pt.actual);
       const deviation = Number(pt.deviation);
-      if (Number.isNaN(deviation)) continue;
 
       const upper = Number(pt.upperTol);
       const lower = Number(pt.lowerTol);
 
-      if (!Number.isNaN(upper) && deviation > upper) return true;
-      if (!Number.isNaN(lower) && deviation < lower) return true;
+      const hasActual = !Number.isNaN(nominal) && !Number.isNaN(actual);
+      const hasUpper = !Number.isNaN(upper);
+      const hasLower = !Number.isNaN(lower);
+
+      if (hasActual) {
+        if (hasUpper && actual > nominal + upper) return true;
+        if (hasLower && actual < nominal + lower) return true;
+      } else {
+        if (!Number.isNaN(deviation)) {
+          if (hasUpper && deviation > upper) return true;
+          if (hasLower && deviation < lower) return true;
+        }
+      }
     }
     return false;
   }
