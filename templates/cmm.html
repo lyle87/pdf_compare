@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CMM Trend Report</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+  <body class="cmm-body">
+    <header class="cmm-header">
+      <div>
+        <h1>CMM Trend Report</h1>
+        <p>Scan a folder of ZEISS CMM PDF reports, filter by date and part type, and view feature deviations over time.</p>
+      </div>
+      <nav>
+        <a href="/">Back to PDF Compare</a>
+      </nav>
+    </header>
+
+    <section class="cmm-panel">
+      <form id="cmmForm" class="cmm-form">
+        <label>
+          Folder containing reports
+          <input type="text" name="folder" id="folder" placeholder="e.g. C:\\Reports\\CMM" required />
+        </label>
+        <div class="cmm-form-row">
+          <label>
+            Start date
+            <input type="date" name="startDate" id="startDate" />
+          </label>
+          <label>
+            End date
+            <input type="date" name="endDate" id="endDate" />
+          </label>
+          <label>
+            Part type
+            <select name="partType" id="partType">
+              <option value="">All</option>
+              {% for pt in part_types %}
+              <option value="{{ pt }}">{{ pt }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <button type="submit">Generate Trend Report</button>
+      </form>
+      <div id="status" class="cmm-status">Select a folder and press "Generate" to begin.</div>
+    </section>
+
+    <section class="cmm-results" id="results" hidden>
+      <div class="cmm-summary" id="summary"></div>
+      <table class="cmm-table" id="resultsTable">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th style="width: 140px">Latest deviation</th>
+            <th>Trend</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <script src="/static/js/cmm.js"></script>
+  </body>
+</html>
