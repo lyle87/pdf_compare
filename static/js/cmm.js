@@ -18,13 +18,28 @@
     return `<span class="${cls}">${num.toFixed(4)}</span>`;
   }
 
+  function firstNumeric(values) {
+    for (const v of values) {
+      const num = Number(v);
+      if (!Number.isNaN(num)) return num;
+    }
+    return null;
+  }
+
   function renderSparkline(canvas, points) {
     if (!canvas || !points || points.length === 0) return;
     const ctx = canvas.getContext('2d');
     const width = canvas.width = 140;
     const height = canvas.height = 36;
 
-    const values = points.map(p => Number(p.deviation)).filter(v => !Number.isNaN(v));
+    const deviationValues = points.map(p => Number(p.deviation)).filter(v => !Number.isNaN(v));
+    const upperTol = firstNumeric(points.map(p => p.upperTol));
+    const lowerTol = firstNumeric(points.map(p => p.lowerTol));
+
+    const domainValues = deviationValues.slice();
+    if (upperTol !== null) domainValues.push(upperTol);
+    if (lowerTol !== null) domainValues.push(lowerTol);
+    const values = domainValues;
     if (values.length === 0) return;
 
     const min = Math.min(...values);
@@ -36,8 +51,8 @@
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    values.forEach((v, idx) => {
-      const x = values.length === 1 ? width / 2 : (idx / (values.length - 1)) * (width - 6) + 3;
+    deviationValues.forEach((v, idx) => {
+      const x = deviationValues.length === 1 ? width / 2 : (idx / (deviationValues.length - 1)) * (width - 6) + 3;
       const y = height - ((v - min) / range) * (height - 6) - 3;
       if (idx === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -56,6 +71,22 @@
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    const drawTolerance = (value, color) => {
+      if (value === null) return;
+      const y = height - ((value - min) / range) * (height - 6) - 3;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+
+    drawTolerance(upperTol, '#c62828');
+    drawTolerance(lowerTol, '#2e7d32');
   }
 
   function renderTable(data) {

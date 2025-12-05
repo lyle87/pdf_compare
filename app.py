@@ -144,11 +144,14 @@ def _extract_die_number(filename: str) -> Optional[str]:
     return digits.zfill(2)
 
 
-def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
+def _extract_cmm_rows(path: str) -> List[Tuple[str, float, Optional[float], Optional[float]]]:
     """
     Extract ZEISS CMM feature rows with support for:
     - Standard single-line features
     - POS X-Y-Z multi-line features → converted into separate X, Y, Z features.
+
+    Each tuple contains: (feature name, deviation, upper tolerance, lower tolerance).
+    Tolerance values are optional and may be ``None`` if not present in the report.
     """
 
     if fitz is None:
@@ -164,6 +167,7 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
 
         # Locate header columns
         actual_x = deviation_x = hist_x = None
+        upper_tol_x = lower_tol_x = None
 
         for x0, y0, x1, y1, text, *_ in words:
             if text == "Actual":
@@ -172,13 +176,36 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 deviation_x = x0
             elif text == "Histogram":
                 hist_x = x0
+            elif text.lower().startswith("upper"):
+                upper_tol_x = x0
+            elif text.lower().startswith("lower"):
+                lower_tol_x = x0
 
         if actual_x is None or deviation_x is None or hist_x is None:
             continue
 
-        feature_limit_x = actual_x - 5
-        deviation_min_x = deviation_x - 5
-        deviation_max_x = hist_x + 5
+        columns = [
+            ("actual", actual_x),
+            ("deviation", deviation_x),
+            ("upper_tol", upper_tol_x) if upper_tol_x is not None else None,
+            ("lower_tol", lower_tol_x) if lower_tol_x is not None else None,
+            ("histogram", hist_x),
+        ]
+        columns = [c for c in columns if c is not None]
+        columns.sort(key=lambda c: c[1])
+
+        first_column_x = columns[0][1]
+        feature_limit_x = first_column_x - 5
+
+        def column_for_x(x_val: float) -> Optional[str]:
+            """Assign an x-position to the nearest header column using midpoints."""
+
+            for idx, (name, col_x) in enumerate(columns):
+                left_bound = -float("inf") if idx == 0 else (columns[idx - 1][1] + col_x) / 2
+                right_bound = float("inf") if idx == len(columns) - 1 else (col_x + columns[idx + 1][1]) / 2
+                if left_bound <= x_val < right_bound:
+                    return name
+            return None
 
         # Convert to row clusters by Y
         items = []
@@ -212,6 +239,8 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
         for group in row_groups:
             feature_tokens = []
             deviation_candidates = []
+            upper_tol_candidates = []
+            lower_tol_candidates = []
             axis_row_label = None
 
             # Detect axis-only child rows
@@ -222,16 +251,24 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
             # Handle axis child rows → create separate features
             if axis_row_label and current_parent_feature:
                 # collect deviation number
-                dev_val = None
+                dev_val = upper_val = lower_val = None
                 for w in group:
                     tx = w["text"].strip()
-                    if _is_numeric_token(tx) and deviation_min_x <= w["x"] < deviation_max_x:
+                    if not _is_numeric_token(tx):
+                        continue
+
+                    col = column_for_x(w["x"])
+                    if col == "deviation":
                         dev_val = _parse_numeric_token(tx)
+                    elif col == "upper_tol":
+                        upper_val = _parse_numeric_token(tx)
+                    elif col == "lower_tol":
+                        lower_val = _parse_numeric_token(tx)
 
                 if dev_val is not None:
                     # Example: H203 POS X
                     feature_full = f"{current_parent_feature} {axis_row_label}"
-                    rows.append((feature_full, dev_val))
+                    rows.append((feature_full, dev_val, upper_val, lower_val))
 
                 continue
 
@@ -243,8 +280,16 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
                 if x < feature_limit_x:
                     feature_tokens.append(tx)
                 else:
-                    if _is_numeric_token(tx) and deviation_min_x <= x < deviation_max_x:
+                    if not _is_numeric_token(tx):
+                        continue
+
+                    col = column_for_x(x)
+                    if col == "deviation":
                         deviation_candidates.append(tx)
+                    elif col == "upper_tol":
+                        upper_tol_candidates.append(tx)
+                    elif col == "lower_tol":
+                        lower_tol_candidates.append(tx)
 
             feature_name = " ".join(feature_tokens).strip()
 
@@ -272,7 +317,9 @@ def _extract_cmm_rows(path: str) -> List[Tuple[str, float]]:
 
             if deviation_candidates:
                 deviation_value = _parse_numeric_token(deviation_candidates[-1])
-                rows.append((feature_name, deviation_value))
+                upper_tol_value = _parse_numeric_token(upper_tol_candidates[-1]) if upper_tol_candidates else None
+                lower_tol_value = _parse_numeric_token(lower_tol_candidates[-1]) if lower_tol_candidates else None
+                rows.append((feature_name, deviation_value, upper_tol_value, lower_tol_value))
 
     return rows
 
@@ -331,10 +378,12 @@ def _collect_cmm_data(
                 errors.append(f"{entry}: {exc}")
             continue
 
-        for feature, deviation in rows:
+        for feature, deviation, upper_tol, lower_tol in rows:
             results.setdefault(feature, []).append({
                 'date': mtime.isoformat(),
                 'deviation': deviation,
+                'upperTol': upper_tol,
+                'lowerTol': lower_tol,
                 'report': entry,
             })
 
